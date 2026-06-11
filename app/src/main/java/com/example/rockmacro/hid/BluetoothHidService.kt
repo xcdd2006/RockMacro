@@ -638,6 +638,22 @@ class BluetoothHidService : Service() {
         sendMouseReport(pressReport)
     }
 
+    /**
+     * 鼠标按键按住一段时间后释放
+     * 蓝牙HID需要持续发送报告才能保持按键状态
+     */
+    fun mousePressAndHold(button: Int, holdMs: Long) {
+        val pressReport = HidReportBuilder.buildMouseReport(button, 0, 0, 0)
+        val releaseReport = HidReportBuilder.buildMouseReport(0, 0, 0, 0)
+
+        val startTime = System.currentTimeMillis()
+        while (System.currentTimeMillis() - startTime < holdMs) {
+            sendMouseReport(pressReport)
+            Thread.sleep(15) // ~60Hz 发送频率
+        }
+        sendMouseReport(releaseReport)
+    }
+
     fun mouseRelease() {
         val releaseReport = HidReportBuilder.buildMouseReport(0, 0, 0, 0)
         sendMouseReport(releaseReport)

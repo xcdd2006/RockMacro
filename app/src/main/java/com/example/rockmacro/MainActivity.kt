@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
         }
 
         var selectedTab by remember { mutableIntStateOf(0) }
-        val connectedDeviceName = viewModel.connectedDeviceName
+        val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
 
         val tabs = listOf("蓝牙", "键盘", "鼠标", "宏")
 
@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     actions = {
                         // 连接状态指示器
-                        val isConnected = connectedDeviceName.value != null
+                        val isConnected = connectedDeviceName != null
                         Surface(
                             shape = MaterialTheme.shapes.small,
                             color = if (isConnected)

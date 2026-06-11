@@ -27,7 +27,8 @@ sealed class MacroAction {
     ) : MacroAction()
 
     data class MousePress(
-        val button: Int
+        val button: Int,
+        val holdMs: Long = 0
     ) : MacroAction()
 
     data class MouseRelease(

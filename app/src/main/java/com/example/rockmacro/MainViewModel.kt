@@ -351,6 +351,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        
+        // 应用退出前保存宏
+        macroEngine?.let { engine ->
+            try {
+                val currentMacros = engine.macros.value
+                if (currentMacros.isNotEmpty()) {
+                    MacroRepository(getApplication()).saveMacros(currentMacros)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving macros on exit: ${e.message}")
+            }
+        }
+        
         try { getApplication<Application>().unregisterReceiver(scanReceiver) }
         catch (e: Exception) { Log.w(TAG, "Error: ${e.message}") }
     }
