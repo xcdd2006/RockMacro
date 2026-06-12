@@ -142,11 +142,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 首次创建引擎
             macroEngine = MacroEngine(service, MacroRepository(getApplication()))
             setupEngineObservers()
-            setupServiceObservers(service)
-        } else {
-            // Activity 重建后复用引擎，只更新 HID 服务引用
-            macroEngine?.updateHidService(service)
         }
+
+        // 无论在引擎之前还是之后，只要拿到了非 null 的服务就设置观察者
+        if (service != null && !serviceObserversSetup) {
+            setupServiceObservers(service)
+        }
+
+        // Activity 重建后复用引擎，只更新 HID 服务引用
+        macroEngine?.updateHidService(service)
 
         // 无论新旧引擎，都要更新回调（通知栏按钮操作）
         service?.setMacroControlCallback { action ->
@@ -176,7 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     BluetoothHidService.HidState.DISCONNECTED -> {
                         _connectionState.value = ConnectionState.DISCONNECTED
-                        _hidReady.value = true
+                        _hidReady.value = false
                     }
                     BluetoothHidService.HidState.ADVERTISING -> {
                         _connectionState.value = ConnectionState.ADVERTISING
@@ -294,6 +298,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (hidService == null) {
             _connectionState.value = ConnectionState.ERROR
             _errorMessage.value = "蓝牙HID服务未就绪，请稍后再试"
+            return
+        }
+        // 防止重复调用
+        if (_connectionState.value == ConnectionState.CONNECTING) {
+            Log.w(TAG, "connectToDevice: already connecting")
+            return
+        }
+        if (_connectionState.value == ConnectionState.CONNECTED) {
+            Log.w(TAG, "connectToDevice: already connected")
             return
         }
         try { bluetoothAdapter?.cancelDiscovery() } catch (_: SecurityException) {}

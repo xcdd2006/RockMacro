@@ -64,6 +64,7 @@ class BluetoothHidService : Service() {
 
         private const val HEARTBEAT_INTERVAL_MS = 2000L
         private const val RECONNECT_DELAY_MS = 2000L
+        private const val CONNECTION_TIMEOUT_MS = 10_000L
 
         @Volatile
         var instance: BluetoothHidService? = null
@@ -115,6 +116,7 @@ class BluetoothHidService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
+    private var connectionTimeoutJob: Job? = null
     private var lastConnectedDevice: BluetoothDevice? = null
 
     // 宏控制通知
@@ -155,6 +157,13 @@ class BluetoothHidService : Service() {
                     }
                     device?.let { dev ->
                         Log.d(TAG, "ACL connected: ${dev.address} name=${dev.name}")
+                        // ACL 重连后，如果 HID 未连接则尝试重连
+                        if (_hidState.value != HidState.CONNECTED &&
+                            _hidState.value != HidState.CONNECTING &&
+                            hidAppRegistered) {
+                            Log.d(TAG, "HID not connected after ACL reconnect, attempting HID reconnect")
+                            connectDevice(dev)
+                        }
                     }
                 }
                 BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
@@ -195,6 +204,7 @@ class BluetoothHidService : Service() {
                 BluetoothProfile.STATE_CONNECTED -> {
                     device?.let { dev ->
                         Log.d(TAG, "HID connected: ${dev.address} name=${dev.name}")
+                        cancelConnectionTimeout()  // 连接成功，取消超时
                         _hidState.value = HidState.CONNECTED
                         addConnectedDevice(dev)
                         lastConnectedDevice = dev
@@ -205,6 +215,7 @@ class BluetoothHidService : Service() {
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     device?.let { dev ->
                         Log.d(TAG, "HID disconnected: ${dev.address}")
+                        cancelConnectionTimeout()  // 连接断开，取消超时
                         onDeviceDisconnected(dev)
                         stopHeartbeat()
                         updateNotification("Disconnected — attempting reconnect...")
@@ -626,6 +637,20 @@ class BluetoothHidService : Service() {
             return false
         }
 
+        // 防止重复连接
+        if (_hidState.value == HidState.CONNECTED) {
+            Log.w(TAG, "connectDevice: already connected to a device")
+            return false
+        }
+        if (_hidState.value == HidState.CONNECTING) {
+            Log.w(TAG, "connectDevice: already connecting, skipping duplicate connect")
+            return false
+        }
+        if (registeredDevices.contains(device)) {
+            Log.w(TAG, "connectDevice: device already in registeredDevices, skipping")
+            return false
+        }
+
         try {
             stopAdvertising()
             Log.d(TAG, "Attempting to connect to device: ${device.address} (name=${device.name})")
@@ -634,6 +659,7 @@ class BluetoothHidService : Service() {
                 Log.d(TAG, "connect() returned true for ${device.address}, waiting for callback...")
                 _hidState.value = HidState.CONNECTING
                 registeredDevices.add(device)
+                startConnectionTimeout()  // 启动连接超时，防止状态卡死
                 return true
             } else {
                 Log.e(TAG, "connect() returned false for ${device.address}")
@@ -656,8 +682,15 @@ class BluetoothHidService : Service() {
     }
 
     fun sendKeyboardReport(report: ByteArray): Boolean {
-        val hid = bluetoothHidDevice ?: return false
-        if (_hidState.value != HidState.CONNECTED) return false
+        val hid = bluetoothHidDevice
+        if (hid == null) {
+            Log.w(TAG, "sendKeyboardReport: bluetoothHidDevice is null")
+            return false
+        }
+        if (_hidState.value != HidState.CONNECTED) {
+            Log.w(TAG, "sendKeyboardReport: not connected (state=${_hidState.value})")
+            return false
+        }
 
         _connectedDevices.value.forEach { connected ->
             try {
@@ -675,8 +708,15 @@ class BluetoothHidService : Service() {
     }
 
     fun sendMouseReport(report: ByteArray): Boolean {
-        val hid = bluetoothHidDevice ?: return false
-        if (_hidState.value != HidState.CONNECTED) return false
+        val hid = bluetoothHidDevice
+        if (hid == null) {
+            Log.w(TAG, "sendMouseReport: bluetoothHidDevice is null")
+            return false
+        }
+        if (_hidState.value != HidState.CONNECTED) {
+            Log.w(TAG, "sendMouseReport: not connected (state=${_hidState.value})")
+            return false
+        }
 
         _connectedDevices.value.forEach { connected ->
             try {
@@ -837,6 +877,28 @@ class BluetoothHidService : Service() {
     private fun stopHeartbeat() {
         heartbeatJob?.cancel()
         heartbeatJob = null
+    }
+
+    /** 连接超时：如果 CONNECTING 超过阈值还未到达 CONNECTED，自动重置 */
+    private fun startConnectionTimeout() {
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = serviceScope.launch {
+            delay(CONNECTION_TIMEOUT_MS)
+            if (_hidState.value == HidState.CONNECTING) {
+                Log.w(TAG, "Connection timed out after ${CONNECTION_TIMEOUT_MS}ms, resetting state")
+                _hidState.value = HidState.DISCONNECTED
+                registeredDevices.clear()
+                if (hidAppRegistered) {
+                    Log.d(TAG, "Restarting advertising after connection timeout")
+                    startAdvertising()
+                }
+            }
+        }
+    }
+
+    private fun cancelConnectionTimeout() {
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = null
     }
 
     private fun scheduleReconnect(device: BluetoothDevice) {

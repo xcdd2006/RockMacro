@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.rockmacro.MainViewModel
 import kotlinx.coroutines.launch
@@ -28,24 +29,9 @@ fun BluetoothScreen(
     modifier: Modifier = Modifier
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
-    val scannedDevices by viewModel.scannedDevices.collectAsState()
     val pairedDevices by viewModel.pairedDevices.collectAsState()
     val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val hidReady by viewModel.hidReady.collectAsState()
-
-    val context = LocalContext.current
-    val enableBluetoothLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            // 蓝牙已启用，自动开始扫描
-            if (!hidReady) {
-                viewModel.initHidService()
-            }
-            viewModel.startScan()
-        }
-    }
 
     // 请求经典蓝牙可发现模式（让PC等设备能扫描到）
     val discoverableLauncher = rememberLauncherForActivityResult(
@@ -171,56 +157,7 @@ fun BluetoothScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 控制按钮
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    if (connectionState == MainViewModel.ConnectionState.SCANNING) {
-                        viewModel.stopScan()
-                    } else {
-                        // 检查蓝牙是否开启
-                        val btAdapter = viewModel.bluetoothAdapter
-                        if (btAdapter?.isEnabled == true) {
-                            if (!hidReady) {
-                                viewModel.initHidService()
-                            }
-                            viewModel.startScan()
-                        } else {
-                            // 请求开启蓝牙
-                            try {
-                                enableBluetoothLauncher.launch(
-                                    Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                                )
-                            } catch (e: Exception) {
-                                viewModel.setErrorMessage("无法开启蓝牙: ${e.message}")
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                if (connectionState == MainViewModel.ConnectionState.SCANNING) {
-                    Text("取消扫描")
-                } else {
-                    Text("扫描设备")
-                }
-            }
-
-            OutlinedButton(
-                onClick = { viewModel.disconnect() },
-                modifier = Modifier.weight(1f),
-                enabled = connectedDeviceName != null
-            ) {
-                Text("断开连接")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 配对设备列表（限制最大高度，避免遮挡扫描结果）
+        // 配对设备列表
         Text(
             text = "配对设备",
             style = MaterialTheme.typography.headlineSmall,
@@ -230,7 +167,7 @@ fun BluetoothScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         LazyColumn(
-            modifier = Modifier.heightIn(max = 200.dp)
+            modifier = Modifier.heightIn(max = 240.dp)
         ) {
             items(pairedDevices) { device ->
                 Card(
@@ -245,7 +182,7 @@ fun BluetoothScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = device.name.ifEmpty { "未知设备" },
                                 style = MaterialTheme.typography.titleMedium
@@ -256,13 +193,14 @@ fun BluetoothScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        
-                        if (connectedDeviceName?.contains(device.name) == true || 
+
+                        if (connectedDeviceName?.contains(device.name) == true ||
                             connectedDeviceName?.contains(device.address) == true) {
                             Text(
                                 text = "已连接",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 12.dp)
                             )
                         } else {
                             Button(
@@ -283,61 +221,26 @@ fun BluetoothScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 扫描结果（占用剩余空间）
-        Text(
-            text = "扫描结果",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LazyColumn(
-            modifier = Modifier.weight(1f)
+        // 断开连接按钮
+        Button(
+            onClick = { viewModel.disconnect() },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = connectedDeviceName != null
         ) {
-            items(scannedDevices) { device ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp)
-                            .clickable {
-                                if (connectionState != MainViewModel.ConnectionState.CONNECTING) {
-                                    viewModel.connectToDevice(device.device)
-                                }
-                            },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = device.name.ifEmpty { "未知设备" },
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = device.address,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        
-                        Button(
-                            onClick = { 
-                                if (connectionState != MainViewModel.ConnectionState.CONNECTING) {
-                                    viewModel.connectToDevice(device.device)
-                                }
-                            },
-                            enabled = connectionState != MainViewModel.ConnectionState.CONNECTING
-                        ) {
-                            Text("连接")
-                        }
-                    }
-                }
-            }
+            Text("断开连接")
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 作者信息
+        Text(
+            text = "作者：XcddSama\n纪念Lforik_封号一天🤔🤔🤔",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+                .wrapContentWidth(Alignment.CenterHorizontally)
+        )
     }
 }
