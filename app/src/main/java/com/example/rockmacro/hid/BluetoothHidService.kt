@@ -617,6 +617,14 @@ class BluetoothHidService : Service() {
         sendMouseReport(report)
     }
 
+    /**
+     * 鼠标拖拽：按住指定按键的同时移动（用于触摸板双指/双击拖拽）
+     */
+    fun mouseDrag(button: Int, deltaX: Byte, deltaY: Byte) {
+        val report = HidReportBuilder.buildMouseReport(button, deltaX, deltaY, 0)
+        sendMouseReport(report)
+    }
+
     fun mouseClick(button: Int) {
         val pressReport = HidReportBuilder.buildMouseReport(button, 0, 0, 0)
         val releaseReport = HidReportBuilder.buildMouseReport(0, 0, 0, 0)

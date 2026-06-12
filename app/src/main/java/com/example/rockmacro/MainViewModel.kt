@@ -86,7 +86,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var macroEngine: MacroEngine? = null
 
     private val bluetoothManager = application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-    private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
+    val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
 
     private val scanReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -113,7 +113,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addAction(BluetoothDevice.ACTION_FOUND)
             addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
         }
-        application.registerReceiver(scanReceiver, filter)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                application.registerReceiver(scanReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                application.registerReceiver(scanReceiver, filter)
+            }
+            Log.d(TAG, "扫描广播接收器已注册")
+        } catch (e: Exception) {
+            Log.e(TAG, "注册扫描广播接收器失败: ${e.message}")
+            _errorMessage.value = "蓝牙广播接收器注册失败"
+        }
     }
 
     fun bindHidService(service: BluetoothHidService?) {
@@ -164,20 +174,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ==================== HID服务 ====================
+
+    fun initHidService() {
+        // 初始化HID服务
+        if (hidService != null) {
+            _hidReady.value = true
+        } else {
+            _connectionState.value = ConnectionState.ADVERTISING
+        }
+    }
+
     // ==================== 蓝牙操作 ====================
 
     fun startScan() {
-        if (bluetoothAdapter?.isDiscovering == true) {
-            bluetoothAdapter?.cancelDiscovery()
+        Log.d(TAG, "开始扫描设备...")
+        
+        // 先检查蓝牙是否开启
+        if (bluetoothAdapter?.isEnabled != true) {
+            _errorMessage.value = "蓝牙未开启，请先打开蓝牙"
+            _connectionState.value = ConnectionState.IDLE
+            return
         }
+
+        // 检查权限
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val context = getApplication<Application>()
+                val hasScanPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.BLUETOOTH_SCAN
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!hasScanPermission) {
+                    _errorMessage.value = "缺少蓝牙扫描权限"
+                    _connectionState.value = ConnectionState.IDLE
+                    return
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 取消之前的扫描
+        try {
+            if (bluetoothAdapter?.isDiscovering == true) {
+                bluetoothAdapter?.cancelDiscovery()
+            }
+        } catch (_: SecurityException) {}
+
         _scannedDevices.value = emptyList()
         _connectionState.value = ConnectionState.SCANNING
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try { bluetoothAdapter?.startDiscovery() }
-            catch (e: SecurityException) {
-                _errorMessage.value = "缺少蓝牙扫描权限"
-                _connectionState.value = ConnectionState.IDLE
-            }
+        
+        val started = try {
+            bluetoothAdapter?.startDiscovery() ?: false
+        } catch (e: SecurityException) {
+            _errorMessage.value = "缺少蓝牙扫描权限"
+            _connectionState.value = ConnectionState.IDLE
+            false
+        }
+
+        if (!started) {
+            Log.w(TAG, "startDiscovery() 返回 false，启动扫描失败")
+            // 不立即设置错误，因为可能仍在扫描中
+        } else {
+            Log.d(TAG, "扫描已启动")
         }
     }
 
@@ -250,6 +307,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun mouseDrag(button: Int, deltaX: Byte, deltaY: Byte) {
+        hidService?.mouseDrag(button, deltaX, deltaY)
+    }
+
     fun mouseClick(button: Int) {
         hidService?.mouseClick(button)
         if (macroEngine?.state?.value == MacroEngine.MacroState.RECORDING) {
@@ -291,6 +352,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun pauseMacroPlayback() { macroEngine?.pausePlayback() }
     fun resumeMacroPlayback() { macroEngine?.resumePlayback() }
     fun addActionToRecording(action: MacroAction) { macroEngine?.addRecordedAction(action) }
+    fun removeActionFromRecording(action: MacroAction) { macroEngine?.removeRecordedAction(action) }
+    fun clearRecordedActions() { macroEngine?.clearRecordedActions() }
     fun updateMacroName(macro: Macro, newName: String) { macroEngine?.updateMacroName(macro, newName) }
     fun updateMacroNotes(macro: Macro, notes: String) { macroEngine?.updateMacroNotes(macro, notes) }
     fun updateMacroActions(macro: Macro, actions: List<MacroAction>) { macroEngine?.updateMacroActions(macro, actions) }
@@ -308,8 +371,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==================== 蓝牙广播 ====================
-    fun makeDiscoverable() { hidService?.makeDiscoverable() }
-    fun stopAdvertising() { hidService?.stopAdvertising() }
+fun makeDiscoverable() {
+        _connectionState.value = ConnectionState.ADVERTISING
+        hidService?.makeDiscoverable() 
+    }
+    fun stopAdvertising() { 
+        hidService?.stopAdvertising()
+        _connectionState.value = ConnectionState.IDLE
+    }
 
     fun createDiscoverableIntent(): android.content.Intent? {
         return try {
@@ -327,6 +396,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setKeyboardMode(isKeyboard: Boolean) { _isKeyboardMode.value = isKeyboard }
     fun setInputText(text: String) { _inputText.value = text }
     fun clearError() { _errorMessage.value = null }
+    fun setErrorMessage(msg: String) { _errorMessage.value = msg }
 
     private fun addScannedDevice(device: BluetoothDevice) {
         val name = device.name ?: "未知设备"
@@ -340,7 +410,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadPairedDevices() {
+    fun loadPairedDevices() {
         val devices = try {
             bluetoothAdapter?.bondedDevices ?: emptySet()
         } catch (e: SecurityException) { emptySet() }
