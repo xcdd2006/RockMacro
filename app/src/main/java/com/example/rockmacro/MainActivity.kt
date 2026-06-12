@@ -1,6 +1,8 @@
 package com.example.rockmacro
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -62,6 +64,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // 提前创建宏通知渠道，保证在系统设置中可见
+        createMacroNotificationChannel()
+
         // 请求蓝牙权限并启动服务
         if (checkBluetoothPermissions()) {
             startHidService()
@@ -73,6 +78,21 @@ class MainActivity : ComponentActivity() {
             RockmacroTheme {
                 MainScreen()
             }
+        }
+    }
+
+    private fun createMacroNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "rockmacro_macro_channel",
+                "宏播放控制",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "宏播放状态与暂停/停止控制"
+                setShowBadge(false)
+            }
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(channel)
         }
     }
 

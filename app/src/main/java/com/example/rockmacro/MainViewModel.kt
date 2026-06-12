@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -84,6 +85,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 // 核心服务
     var hidService: BluetoothHidService? = null
     private var macroEngine: MacroEngine? = null
+
+    // 宏通知设置
+    private val prefs: SharedPreferences = application.getSharedPreferences("macro_settings", Context.MODE_PRIVATE)
+    private val _macroNotificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", true))
+    val macroNotificationEnabled: StateFlow<Boolean> = _macroNotificationEnabled.asStateFlow()
 
     private val bluetoothManager = application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
@@ -165,8 +171,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // 设置宏通知回调（来自通知栏的暂停/停止/继续操作）
+        service?.setMacroControlCallback { action ->
+            when (action) {
+                "pause" -> pauseMacroPlayback()
+                "stop" -> stopMacroPlayback()
+                "resume" -> resumeMacroPlayback()
+            }
+        }
+
         macroEngine?.let { engine ->
-            viewModelScope.launch { engine.state.collect { _macroEngineState.value = it } }
+            viewModelScope.launch {
+                engine.state.collect { state ->
+                    _macroEngineState.value = state
+                    updateMacroNotification(state)
+                }
+            }
             viewModelScope.launch { engine.macros.collect { _macros.value = it } }
             viewModelScope.launch { engine.currentMacro.collect { _selectedMacro.value = it } }
             viewModelScope.launch { engine.playProgress.collect { _playProgress.value = it } }
@@ -348,7 +368,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectMacro(macro: Macro) { macroEngine?.selectMacro(macro) }
     fun playMacro(macro: Macro) { macroEngine?.playMacro(macro) }
     fun playSelectedMacro() { macroEngine?.playCurrentMacro() }
-    fun stopMacroPlayback() { macroEngine?.stopPlayback() }
+    fun stopMacroPlayback() { 
+        macroEngine?.stopPlayback()
+        hidService?.dismissMacroNotification()
+    }
     fun pauseMacroPlayback() { macroEngine?.pausePlayback() }
     fun resumeMacroPlayback() { macroEngine?.resumePlayback() }
     fun addActionToRecording(action: MacroAction) { macroEngine?.addRecordedAction(action) }
@@ -398,6 +421,14 @@ fun makeDiscoverable() {
     fun clearError() { _errorMessage.value = null }
     fun setErrorMessage(msg: String) { _errorMessage.value = msg }
 
+    fun setMacroNotificationEnabled(enabled: Boolean) {
+        _macroNotificationEnabled.value = enabled
+        prefs.edit().putBoolean("notification_enabled", enabled).apply()
+        if (!enabled) {
+            hidService?.dismissMacroNotification()
+        }
+    }
+
     private fun addScannedDevice(device: BluetoothDevice) {
         val name = device.name ?: "未知设备"
         if (name.isNotEmpty()) {
@@ -416,6 +447,22 @@ fun makeDiscoverable() {
         } catch (e: SecurityException) { emptySet() }
         _pairedDevices.value = devices.map { dev ->
             ScannedDevice(dev, dev.name ?: "未知设备", dev.address)
+        }
+    }
+
+    private fun updateMacroNotification(state: MacroEngine.MacroState) {
+        if (!_macroNotificationEnabled.value) return
+        val service = hidService ?: return
+        when (state) {
+            MacroEngine.MacroState.PLAYING -> {
+                val name = macroEngine?.currentMacro?.value?.name ?: "宏"
+                service.showMacroNotification("运行中", name)
+            }
+            MacroEngine.MacroState.PAUSED -> {
+                val name = macroEngine?.currentMacro?.value?.name ?: "宏"
+                service.showMacroNotification("已暂停", name)
+            }
+            else -> service.dismissMacroNotification()
         }
     }
 

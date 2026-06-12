@@ -53,6 +53,15 @@ class BluetoothHidService : Service() {
 
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "rockmacro_hid_channel"
+
+        // 宏通知
+        private const val MACRO_NOTIFICATION_ID = 1002
+        private const val MACRO_CHANNEL_ID = "rockmacro_macro_channel"
+
+        const val ACTION_MACRO_PAUSE = "com.example.rockmacro.action.MACRO_PAUSE"
+        const val ACTION_MACRO_STOP = "com.example.rockmacro.action.MACRO_STOP"
+        const val ACTION_MACRO_RESUME = "com.example.rockmacro.action.MACRO_RESUME"
+
         private const val HEARTBEAT_INTERVAL_MS = 2000L
         private const val RECONNECT_DELAY_MS = 2000L
 
@@ -107,6 +116,20 @@ class BluetoothHidService : Service() {
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
     private var lastConnectedDevice: BluetoothDevice? = null
+
+    // 宏控制通知
+    private var macroControlCallback: ((action: String) -> Unit)? = null
+    private var macroNotificationShown = false
+
+    private val macroNotificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                ACTION_MACRO_PAUSE -> macroControlCallback?.invoke("pause")
+                ACTION_MACRO_STOP -> macroControlCallback?.invoke("stop")
+                ACTION_MACRO_RESUME -> macroControlCallback?.invoke("resume")
+            }
+        }
+    }
 
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -237,8 +260,21 @@ class BluetoothHidService : Service() {
         instance = this
 
         createNotificationChannel()
+        createMacroNotificationChannel()
         startForegroundService()
         acquireWakeLock()
+
+        // 注册宏通知广播接收器
+        val macroFilter = IntentFilter().apply {
+            addAction(ACTION_MACRO_PAUSE)
+            addAction(ACTION_MACRO_STOP)
+            addAction(ACTION_MACRO_RESUME)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(macroNotificationReceiver, macroFilter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(macroNotificationReceiver, macroFilter)
+        }
 
         val filter = IntentFilter().apply {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
@@ -324,6 +360,88 @@ class BluetoothHidService : Service() {
 
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, notification)
+    }
+
+    // ==================== 宏播放通知 ====================
+
+    private fun createMacroNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                MACRO_CHANNEL_ID,
+                "宏播放控制",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "宏播放状态与暂停/停止控制"
+                setShowBadge(false)
+            }
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(channel)
+        }
+    }
+
+    fun setMacroControlCallback(callback: ((action: String) -> Unit)?) {
+        macroControlCallback = callback
+    }
+
+    fun showMacroNotification(stateText: String, macroName: String) {
+        macroNotificationShown = true
+        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity")
+        val pendingIntent = PendingIntent.getActivity(
+            this, 3, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        )
+
+        val isPlaying = stateText == "运行中"
+        val isPaused = stateText == "已暂停"
+
+        val pauseIntent = PendingIntent.getBroadcast(
+            this, 10, Intent(ACTION_MACRO_PAUSE),
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        )
+        val stopIntent = PendingIntent.getBroadcast(
+            this, 11, Intent(ACTION_MACRO_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        )
+        val resumeIntent = PendingIntent.getBroadcast(
+            this, 12, Intent(ACTION_MACRO_RESUME),
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        )
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, MACRO_CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        builder
+            .setContentTitle("宏: $macroName")
+            .setContentText("状态: $stateText")
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setOngoing(true)
+            .setContentIntent(pendingIntent)
+
+        if (isPlaying) {
+            builder.addAction(android.R.drawable.ic_media_pause, "暂停", pauseIntent)
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopIntent)
+        } else if (isPaused) {
+            builder.addAction(android.R.drawable.ic_media_play, "继续", resumeIntent)
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopIntent)
+        }
+
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(MACRO_NOTIFICATION_ID, builder.build())
+    }
+
+    fun dismissMacroNotification() {
+        if (!macroNotificationShown) return
+        macroNotificationShown = false
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.cancel(MACRO_NOTIFICATION_ID)
     }
 
     private fun acquireWakeLock() {
@@ -770,6 +888,15 @@ class BluetoothHidService : Service() {
             }
         }
         instance = null
+
+        // 销毁宏通知
+        dismissMacroNotification()
+        try {
+            unregisterReceiver(macroNotificationReceiver)
+        } catch (e: Exception) {
+            Log.w(TAG, "Error unregistering macro receiver: ${e.message}")
+        }
+
         try {
             unregisterReceiver(bluetoothStateReceiver)
         } catch (e: Exception) {

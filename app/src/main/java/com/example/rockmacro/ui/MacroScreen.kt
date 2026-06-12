@@ -36,6 +36,7 @@ fun MacroScreen(
     val macros by viewModel.macros.collectAsState()
     val macroState by viewModel.macroEngineState.collectAsState()
     val recordingActions by viewModel.recordedActions.collectAsState()
+    val notificationEnabled by viewModel.macroNotificationEnabled.collectAsState()
     
     var selectedMacroIndex by remember { mutableStateOf(-1) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -138,6 +139,24 @@ fun MacroScreen(
                     )
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 通知开关
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "通知栏宏控制",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.weight(1f))
+            Switch(
+                checked = notificationEnabled,
+                onCheckedChange = { viewModel.setMacroNotificationEnabled(it) }
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
