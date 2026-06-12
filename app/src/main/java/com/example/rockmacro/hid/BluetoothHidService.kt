@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.example.rockmacro.notification.LiveNotificationManager
 import java.util.UUID
 
 class BluetoothHidService : Service() {
@@ -56,7 +57,6 @@ class BluetoothHidService : Service() {
 
         // 宏通知
         private const val MACRO_NOTIFICATION_ID = 1002
-        private const val MACRO_CHANNEL_ID = "rockmacro_macro_channel"
 
         const val ACTION_MACRO_PAUSE = "com.example.rockmacro.action.MACRO_PAUSE"
         const val ACTION_MACRO_STOP = "com.example.rockmacro.action.MACRO_STOP"
@@ -302,7 +302,9 @@ class BluetoothHidService : Service() {
     }
 
     private fun startForegroundService() {
-        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity")
+        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity").apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or
@@ -332,7 +334,9 @@ class BluetoothHidService : Service() {
     }
 
     private fun updateNotification(contentText: String) {
-        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity")
+        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity").apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or
@@ -365,35 +369,27 @@ class BluetoothHidService : Service() {
     // ==================== 宏播放通知 ====================
 
     private fun createMacroNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                MACRO_CHANNEL_ID,
-                "宏播放控制",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "宏播放状态与暂停/停止控制"
-                setShowBadge(false)
-            }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
-        }
+        LiveNotificationManager.createLiveUpdateChannel(this)
     }
 
     fun setMacroControlCallback(callback: ((action: String) -> Unit)?) {
         macroControlCallback = callback
     }
 
-    fun showMacroNotification(stateText: String, macroName: String) {
+    fun showMacroNotification(isPlaying: Boolean, macroName: String) {
         macroNotificationShown = true
-        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity")
+
+        Log.d(TAG, "显示宏通知: isPlaying=$isPlaying, macro=$macroName")
+
+        val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity").apply {
+            putExtra("navigate_to_tab", 3)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 3, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
-
-        val isPlaying = stateText == "运行中"
-        val isPaused = stateText == "已暂停"
 
         val pauseIntent = PendingIntent.getBroadcast(
             this, 10, Intent(ACTION_MACRO_PAUSE),
@@ -411,30 +407,18 @@ class BluetoothHidService : Service() {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
 
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, MACRO_CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-
-        builder
-            .setContentTitle("宏: $macroName")
-            .setContentText("状态: $stateText")
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setOngoing(true)
-            .setContentIntent(pendingIntent)
-
-        if (isPlaying) {
-            builder.addAction(android.R.drawable.ic_media_pause, "暂停", pauseIntent)
-            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopIntent)
-        } else if (isPaused) {
-            builder.addAction(android.R.drawable.ic_media_play, "继续", resumeIntent)
-            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopIntent)
-        }
-
+        // 使用 IMPORTANCE_HIGH 渠道构建实况通知
+        val notification = LiveNotificationManager.buildRunningNotification(
+            context = this,
+            macroName = macroName,
+            isPlaying = isPlaying,
+            pendingIntent = pendingIntent,
+            pauseIntent = pauseIntent,
+            resumeIntent = resumeIntent,
+            stopIntent = stopIntent
+        )
         val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(MACRO_NOTIFICATION_ID, builder.build())
+        nm.notify(MACRO_NOTIFICATION_ID, notification)
     }
 
     fun dismissMacroNotification() {

@@ -37,6 +37,7 @@ fun MacroScreen(
     val macroState by viewModel.macroEngineState.collectAsState()
     val recordingActions by viewModel.recordedActions.collectAsState()
     val notificationEnabled by viewModel.macroNotificationEnabled.collectAsState()
+    val currentRepeatCount by viewModel.currentRepeatCount.collectAsState()
     
     var selectedMacroIndex by remember { mutableStateOf(-1) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -93,6 +94,19 @@ fun MacroScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium
                 )
+
+                // 显示当前执行进度
+                if (macroState == MacroEngine.MacroState.PLAYING || macroState == MacroEngine.MacroState.PAUSED) {
+                    val selectedMacro = if (selectedMacroIndex in macros.indices) macros[selectedMacroIndex] else null
+                    if (selectedMacro != null) {
+                        val total = if (selectedMacro.infiniteRepeat) "∞" else selectedMacro.repeatCount.toString()
+                        Text(
+                            text = "执行: 第 ${currentRepeatCount}/${total} 次",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
                 
                 if (recordingActions.isNotEmpty()) {
                     Text(

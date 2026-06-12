@@ -3,6 +3,7 @@ package com.example.rockmacro.macro
 import android.util.Log
 import com.example.rockmacro.hid.BluetoothHidService
 import com.example.rockmacro.hid.HidReportBuilder
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MacroEngine(
-    private val hidService: BluetoothHidService?,
+    private var hidService: BluetoothHidService?,
     private val repository: MacroRepository? = null
 ) {
     companion object {
@@ -42,6 +43,9 @@ class MacroEngine(
 
     private val _playProgress = MutableStateFlow(0f)
     val playProgress: StateFlow<Float> = _playProgress
+
+    private val _currentRepeatCount = MutableStateFlow(0)
+    val currentRepeatCount: StateFlow<Int> = _currentRepeatCount
 
     private var playJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -221,6 +225,8 @@ class MacroEngine(
 
     // 执行宏
     fun playMacro(macro: Macro) {
+        _currentMacro.value = macro
+        _currentRepeatCount.value = 0
         _state.value = MacroState.PLAYING
         playJob?.cancel()
         playJob = scope.launch {
@@ -231,6 +237,7 @@ class MacroEngine(
                 val maxRepeat = if (macro.infiniteRepeat) Int.MAX_VALUE else macro.repeatCount
                 for (i in 0 until maxRepeat) {
                     if (_state.value != MacroState.PLAYING) break
+                    _currentRepeatCount.value = i + 1
                     executeActions(macro.actions, totalActions, executedActions)
                     executedActions = (executedActions + totalActions).toInt()
                 }
@@ -241,6 +248,7 @@ class MacroEngine(
                     _state.value = MacroState.IDLE
                 }
                 _playProgress.value = 0f
+                _currentRepeatCount.value = 0
             }
         }
     }
@@ -253,6 +261,7 @@ class MacroEngine(
         playJob?.cancel()
         _state.value = MacroState.IDLE
         _playProgress.value = 0f
+        _currentRepeatCount.value = 0
     }
 
     fun pausePlayback() {
@@ -370,5 +379,16 @@ class MacroEngine(
                 _playProgress.value = executed.toFloat() / totalActions.toFloat()
             }
         }
+    }
+
+    /** 销毁引擎，取消所有协程 */
+    fun destroy() {
+        stopPlayback()
+        scope.cancel()
+    }
+
+    /** 更新 HID 服务引用（Activity 重建后重新绑定） */
+    fun updateHidService(service: BluetoothHidService?) {
+        hidService = service
     }
 }

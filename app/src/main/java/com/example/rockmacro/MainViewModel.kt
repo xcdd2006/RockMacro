@@ -76,6 +76,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _playProgress = MutableStateFlow(0f)
     val playProgress: StateFlow<Float> = _playProgress.asStateFlow()
 
+    private val _currentRepeatCount = MutableStateFlow(0)
+    val currentRepeatCount: StateFlow<Int> = _currentRepeatCount.asStateFlow()
+
     // 控制面板状态
     private val _isKeyboardMode = MutableStateFlow(true)
     val isKeyboardMode: StateFlow<Boolean> = _isKeyboardMode.asStateFlow()
@@ -134,7 +137,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun bindHidService(service: BluetoothHidService?) {
         hidService = service
-        macroEngine = MacroEngine(service, MacroRepository(getApplication()))
+
+        if (macroEngine == null) {
+            // 首次创建引擎
+            macroEngine = MacroEngine(service, MacroRepository(getApplication()))
+            setupEngineObservers()
+            setupServiceObservers(service)
+        } else {
+            // Activity 重建后复用引擎，只更新 HID 服务引用
+            macroEngine?.updateHidService(service)
+        }
+
+        // 无论新旧引擎，都要更新回调（通知栏按钮操作）
+        service?.setMacroControlCallback { action ->
+            when (action) {
+                "pause" -> pauseMacroPlayback()
+                "stop" -> stopMacroPlayback()
+                "resume" -> resumeMacroPlayback()
+            }
+        }
+    }
+
+    private var serviceObserversSetup = false
+
+    private fun setupServiceObservers(service: BluetoothHidService?) {
+        if (serviceObserversSetup) return
+        serviceObserversSetup = true
 
         viewModelScope.launch {
             service?.hidState?.collect { state ->
@@ -170,15 +198,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else null
             }
         }
+    }
 
-        // 设置宏通知回调（来自通知栏的暂停/停止/继续操作）
-        service?.setMacroControlCallback { action ->
-            when (action) {
-                "pause" -> pauseMacroPlayback()
-                "stop" -> stopMacroPlayback()
-                "resume" -> resumeMacroPlayback()
-            }
-        }
+    private var engineObserversSetup = false
+
+    private fun setupEngineObservers() {
+        if (engineObserversSetup) return
+        engineObserversSetup = true
 
         macroEngine?.let { engine ->
             viewModelScope.launch {
@@ -190,6 +216,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { engine.macros.collect { _macros.value = it } }
             viewModelScope.launch { engine.currentMacro.collect { _selectedMacro.value = it } }
             viewModelScope.launch { engine.playProgress.collect { _playProgress.value = it } }
+            viewModelScope.launch { engine.currentRepeatCount.collect { _currentRepeatCount.value = it } }
             viewModelScope.launch { engine.recordedActions.collect { _recordedActions.value = it } }
         }
     }
@@ -453,15 +480,14 @@ fun makeDiscoverable() {
     private fun updateMacroNotification(state: MacroEngine.MacroState) {
         if (!_macroNotificationEnabled.value) return
         val service = hidService ?: return
+        val macro = macroEngine?.currentMacro?.value
+        val name = macro?.name ?: "宏"
+
         when (state) {
-            MacroEngine.MacroState.PLAYING -> {
-                val name = macroEngine?.currentMacro?.value?.name ?: "宏"
-                service.showMacroNotification("运行中", name)
-            }
-            MacroEngine.MacroState.PAUSED -> {
-                val name = macroEngine?.currentMacro?.value?.name ?: "宏"
-                service.showMacroNotification("已暂停", name)
-            }
+            MacroEngine.MacroState.PLAYING ->
+                service.showMacroNotification(isPlaying = true, macroName = name)
+            MacroEngine.MacroState.PAUSED ->
+                service.showMacroNotification(isPlaying = false, macroName = name)
             else -> service.dismissMacroNotification()
         }
     }

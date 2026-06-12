@@ -1,8 +1,6 @@
 package com.example.rockmacro
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -20,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -33,6 +32,9 @@ class MainActivity : ComponentActivity() {
     var hidService by mutableStateOf<BluetoothHidService?>(null)
         private set
     private var bound = false
+
+    /** 用于通知 Compose 处理通知栏点击跳转 */
+    private var navigateToTabTrigger by mutableStateOf(0L)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -64,9 +66,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 提前创建宏通知渠道，保证在系统设置中可见
-        createMacroNotificationChannel()
-
         // 请求蓝牙权限并启动服务
         if (checkBluetoothPermissions()) {
             startHidService()
@@ -81,19 +80,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun createMacroNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "rockmacro_macro_channel",
-                "宏播放控制",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "宏播放状态与暂停/停止控制"
-                setShowBadge(false)
-            }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
-        }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // 触发 Compose 重新组合，让 MainScreen 处理新的 intent extra
+        navigateToTabTrigger++
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -110,6 +100,17 @@ class MainActivity : ComponentActivity() {
 
         var selectedTab by remember { mutableIntStateOf(0) }
         val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
+
+        // 处理通知栏点击跳转到宏界面
+        val activity = LocalContext.current as? MainActivity
+        LaunchedEffect(navigateToTabTrigger) {
+            val tab = activity?.intent?.getIntExtra("navigate_to_tab", -1) ?: -1
+            if (tab >= 0) {
+                selectedTab = tab
+                // 清除 extra，防止旋转屏幕时再次跳转
+                activity?.intent?.removeExtra("navigate_to_tab")
+            }
+        }
 
         val tabs = listOf("蓝牙", "键盘", "鼠标", "宏")
 
