@@ -269,7 +269,12 @@ class MacroEngine(
     }
 
     fun resumePlayback() {
-        _state.value = MacroState.PLAYING
+        if (playJob?.isActive != true && _state.value == MacroState.PAUSED) {
+            // 协程已结束（在两次循环间隙暂停导致），重新启动
+            _currentMacro.value?.let { playMacro(it) }
+        } else {
+            _state.value = MacroState.PLAYING
+        }
     }
 
     private fun countTotalActions(actions: List<MacroAction>): Long {
