@@ -8,6 +8,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import com.example.rockmacro.R
 
 /**
  * 宏实况通知管理器
@@ -78,7 +79,7 @@ object LiveNotificationManager {
         builder.apply {
             setContentTitle(stateText)
             setContentText("宏: $macroName")
-            setSmallIcon(android.R.drawable.ic_menu_compass)
+            setSmallIcon(R.mipmap.icon_foreground)
             setOngoing(true)
             setAutoCancel(false)
             setShowWhen(true)
