@@ -387,10 +387,10 @@ class BluetoothHidService : Service() {
         macroControlCallback = callback
     }
 
-    fun showMacroNotification(isPlaying: Boolean, macroName: String) {
+    fun showMacroNotification(isPlaying: Boolean, macroName: String, enableSuperIsland: Boolean = true) {
         macroNotificationShown = true
 
-        Log.d(TAG, "显示宏通知: isPlaying=$isPlaying, macro=$macroName")
+        Log.d(TAG, "显示宏通知: isPlaying=$isPlaying, macro=$macroName, superIsland=$enableSuperIsland")
 
         val intent = Intent().setClassName(this, "com.example.rockmacro.MainActivity").apply {
             putExtra("navigate_to_tab", 3)
@@ -403,17 +403,17 @@ class BluetoothHidService : Service() {
         )
 
         val pauseIntent = PendingIntent.getBroadcast(
-            this, 10, Intent(ACTION_MACRO_PAUSE),
+            this, 10, Intent(ACTION_MACRO_PAUSE).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
         val stopIntent = PendingIntent.getBroadcast(
-            this, 11, Intent(ACTION_MACRO_STOP),
+            this, 11, Intent(ACTION_MACRO_STOP).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
         val resumeIntent = PendingIntent.getBroadcast(
-            this, 12, Intent(ACTION_MACRO_RESUME),
+            this, 12, Intent(ACTION_MACRO_RESUME).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
@@ -426,7 +426,8 @@ class BluetoothHidService : Service() {
             pendingIntent = pendingIntent,
             pauseIntent = pauseIntent,
             resumeIntent = resumeIntent,
-            stopIntent = stopIntent
+            stopIntent = stopIntent,
+            enableSuperIsland = enableSuperIsland
         )
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(MACRO_NOTIFICATION_ID, notification)

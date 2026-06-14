@@ -37,6 +37,7 @@ fun MacroScreen(
     val macroState by viewModel.macroEngineState.collectAsState()
     val recordingActions by viewModel.recordedActions.collectAsState()
     val notificationEnabled by viewModel.macroNotificationEnabled.collectAsState()
+    val superIslandEnabled by viewModel.superIslandEnabled.collectAsState()
     val currentRepeatCount by viewModel.currentRepeatCount.collectAsState()
     
     var selectedMacroIndex by remember { mutableStateOf(-1) }
@@ -170,6 +171,22 @@ fun MacroScreen(
             Switch(
                 checked = notificationEnabled,
                 onCheckedChange = { viewModel.setMacroNotificationEnabled(it) }
+            )
+        }
+
+        // 超级岛开关
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "超级岛",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.weight(1f))
+            Switch(
+                checked = superIslandEnabled,
+                onCheckedChange = { viewModel.setSuperIslandEnabled(it) }
             )
         }
 

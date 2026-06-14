@@ -94,6 +94,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _macroNotificationEnabled = MutableStateFlow(prefs.getBoolean("notification_enabled", true))
     val macroNotificationEnabled: StateFlow<Boolean> = _macroNotificationEnabled.asStateFlow()
 
+    private val _superIslandEnabled = MutableStateFlow(prefs.getBoolean("super_island_enabled", true))
+    val superIslandEnabled: StateFlow<Boolean> = _superIslandEnabled.asStateFlow()
+
     private val bluetoothManager = application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
 
@@ -469,6 +472,18 @@ fun makeDiscoverable() {
         }
     }
 
+    fun setSuperIslandEnabled(enabled: Boolean) {
+        _superIslandEnabled.value = enabled
+        prefs.edit().putBoolean("super_island_enabled", enabled).apply()
+        // 立即刷新通知
+        val service = hidService ?: return
+        val macro = macroEngine?.currentMacro?.value
+        val state = _macroEngineState.value
+        if (state == MacroEngine.MacroState.PLAYING || state == MacroEngine.MacroState.PAUSED) {
+            service.showMacroNotification(isPlaying = state == MacroEngine.MacroState.PLAYING, macroName = macro?.name ?: "宏", enableSuperIsland = enabled)
+        }
+    }
+
     private fun addScannedDevice(device: BluetoothDevice) {
         val name = device.name ?: "未知设备"
         if (name.isNotEmpty()) {
@@ -495,12 +510,13 @@ fun makeDiscoverable() {
         val service = hidService ?: return
         val macro = macroEngine?.currentMacro?.value
         val name = macro?.name ?: "宏"
+        val superIsland = _superIslandEnabled.value
 
         when (state) {
             MacroEngine.MacroState.PLAYING ->
-                service.showMacroNotification(isPlaying = true, macroName = name)
+                service.showMacroNotification(isPlaying = true, macroName = name, enableSuperIsland = superIsland)
             MacroEngine.MacroState.PAUSED ->
-                service.showMacroNotification(isPlaying = false, macroName = name)
+                service.showMacroNotification(isPlaying = false, macroName = name, enableSuperIsland = superIsland)
             else -> service.dismissMacroNotification()
         }
     }
