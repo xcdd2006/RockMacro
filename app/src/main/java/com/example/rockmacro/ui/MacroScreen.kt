@@ -164,7 +164,7 @@ fun MacroScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "通知栏宏控制",
+                text = "实况通知",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.weight(1f))
@@ -180,7 +180,7 @@ fun MacroScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "超级岛",
+                text = "小米超级岛",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.weight(1f))
