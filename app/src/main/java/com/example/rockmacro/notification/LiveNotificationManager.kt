@@ -161,41 +161,26 @@ object LiveNotificationManager {
         extras.putString("miui.focus.param", islandParams)
 
         // 2. 构建按钮 Action 映射（miui.focus.actions）
-        //    官方模板：actions 数组中的 "action" 字段引用这里的 key
+        //    注意：MIUI 超级岛的按钮点击需要使用 Intent 而不是 Notification.Action
+        //    直接将 PendingIntent 放入 Bundle 中
         val actionsBundle = Bundle()
 
         // 按钮1：暂停/继续
         val toggleActionKey = "miui.focus.action_pause_resume"
         if (isPlaying) {
             pauseIntent?.let {
-                // 注意：官方文档要求广播 PendingIntent 添加 FLAG_RECEIVER_FOREGROUND
-                val pauseAction = Notification.Action.Builder(
-                    Icon.createWithResource(context, android.R.drawable.ic_media_pause),
-                    "暂停",
-                    it
-                ).build()
-                actionsBundle.putParcelable(toggleActionKey, pauseAction)
+                actionsBundle.putParcelable(toggleActionKey, it)
             }
         } else {
             resumeIntent?.let {
-                val resumeAction = Notification.Action.Builder(
-                    Icon.createWithResource(context, android.R.drawable.ic_media_play),
-                    "继续",
-                    it
-                ).build()
-                actionsBundle.putParcelable(toggleActionKey, resumeAction)
+                actionsBundle.putParcelable(toggleActionKey, it)
             }
         }
 
         // 按钮2：停止
         val stopActionKey = "miui.focus.action_stop"
         stopIntent?.let {
-            val stopAction = Notification.Action.Builder(
-                Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
-                "停止",
-                it
-            ).build()
-            actionsBundle.putParcelable(stopActionKey, stopAction)
+            actionsBundle.putParcelable(stopActionKey, it)
         }
 
         extras.putBundle("miui.focus.actions", actionsBundle)
