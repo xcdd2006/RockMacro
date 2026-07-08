@@ -201,7 +201,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             service?.connectedDevices?.collect { devices ->
                 _connectedDeviceName.value = if (devices.isNotEmpty()) {
-                    devices.first().device.name ?: devices.first().device.address
+                    val device = devices.first().device
+                    val name = try { device.name } catch (e: SecurityException) { null }
+                    name ?: device.address
                 } else null
             }
         }
@@ -485,7 +487,7 @@ fun makeDiscoverable() {
     }
 
     private fun addScannedDevice(device: BluetoothDevice) {
-        val name = device.name ?: "未知设备"
+        val name = try { device.name } catch (e: SecurityException) { null } ?: "未知设备"
         if (name.isNotEmpty()) {
             val scanned = ScannedDevice(device, name, device.address)
             val current = _scannedDevices.value.toMutableList()
@@ -501,7 +503,8 @@ fun makeDiscoverable() {
             bluetoothAdapter?.bondedDevices ?: emptySet()
         } catch (e: SecurityException) { emptySet() }
         _pairedDevices.value = devices.map { dev ->
-            ScannedDevice(dev, dev.name ?: "未知设备", dev.address)
+            val devName = try { dev.name } catch (e: SecurityException) { null }
+            ScannedDevice(dev, devName ?: "未知设备", dev.address)
         }
     }
 

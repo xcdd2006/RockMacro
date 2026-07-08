@@ -18,6 +18,7 @@ import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import android.content.IntentFilter
 import android.os.Binder
 import android.os.Build
@@ -156,7 +157,8 @@ class BluetoothHidService : Service() {
                         intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                     }
                     device?.let { dev ->
-                        Log.d(TAG, "ACL connected: ${dev.address} name=${dev.name}")
+                        val devName = try { dev.name } catch (e: SecurityException) { "unknown" }
+                        Log.d(TAG, "ACL connected: ${dev.address} name=${devName ?: "unknown"}")
                         // ACL 重连后，如果 HID 未连接则尝试重连
                         if (_hidState.value != HidState.CONNECTED &&
                             _hidState.value != HidState.CONNECTING &&
@@ -203,12 +205,13 @@ class BluetoothHidService : Service() {
             when (state) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     device?.let { dev ->
-                        Log.d(TAG, "HID connected: ${dev.address} name=${dev.name}")
-                        cancelConnectionTimeout()  // 连接成功，取消超时
+                        val devName = try { dev.name } catch (e: SecurityException) { "unknown" }
+                        Log.d(TAG, "HID connected: ${dev.address} name=${devName ?: "unknown"}")
+                        cancelConnectionTimeout()  // 杩炴帴鎴愬姛锛屽彇娑堣秴鏃?
                         _hidState.value = HidState.CONNECTED
                         addConnectedDevice(dev)
                         lastConnectedDevice = dev
-                        updateNotification("Connected to: ${dev.name ?: dev.address}")
+                        updateNotification("Connected to: ${devName ?: dev.address}")
                         startHeartbeat()
                     }
                 }
@@ -232,7 +235,11 @@ class BluetoothHidService : Service() {
         override fun onGetReport(device: BluetoothDevice?, type: Byte, id: Byte, bufferSize: Int) {
             device?.let { dev ->
                 Log.d(TAG, "Get report request from ${dev.address}, type=$type, id=$id")
-                bluetoothHidDevice?.replyReport(dev, type, id, ByteArray(bufferSize))
+                try {
+                    bluetoothHidDevice?.replyReport(dev, type, id, ByteArray(bufferSize))
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "SecurityException in replyReport: ${e.message}")
+                }
             }
         }
 
@@ -240,7 +247,11 @@ class BluetoothHidService : Service() {
             device?.let { dev ->
                 Log.d(TAG, "Set report from ${dev.address}, type=$type, id=$id")
                 if (type == BluetoothHidDevice.REPORT_TYPE_OUTPUT && data != null) {
-                    bluetoothHidDevice?.replyReport(dev, type, id, data)
+                    try {
+                        bluetoothHidDevice?.replyReport(dev, type, id, data)
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException in replyReport: ${e.message}")
+                    }
                 }
             }
         }
@@ -281,11 +292,7 @@ class BluetoothHidService : Service() {
             addAction(ACTION_MACRO_STOP)
             addAction(ACTION_MACRO_RESUME)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(macroNotificationReceiver, macroFilter, Context.RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(macroNotificationReceiver, macroFilter)
-        }
+        ContextCompat.registerReceiver(this, macroNotificationReceiver, macroFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         val filter = IntentFilter().apply {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
@@ -518,7 +525,12 @@ class BluetoothHidService : Service() {
         )
 
         appSdpSettings?.let { sdp ->
-            val result = bluetoothHidDevice?.registerApp(sdp, null, null, Runnable::run, hidCallback)
+            val result = try {
+                bluetoothHidDevice?.registerApp(sdp, null, null, Runnable::run, hidCallback)
+            } catch (e: SecurityException) {
+                Log.e(TAG, "SecurityException registering HID app: ${e.message}")
+                false
+            }
             if (result == true) {
                 Log.d(TAG, "Composite HID app registered successfully")
                 hidAppRegistered = true
@@ -569,8 +581,8 @@ class BluetoothHidService : Service() {
     fun stopAdvertising() {
         try {
             bleAdvertiser?.stopAdvertising(advertiseCallback)
-        } catch (e: Exception) {
-            Log.w(TAG, "Error stopping advertising: ${e.message}")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException stopping advertising: ${e.message}")
         }
         isAdvertising = false
 
@@ -654,7 +666,8 @@ class BluetoothHidService : Service() {
 
         try {
             stopAdvertising()
-            Log.d(TAG, "Attempting to connect to device: ${device.address} (name=${device.name})")
+            val deviceName = try { device.name } catch (e: SecurityException) { "unknown" }
+            Log.d(TAG, "Attempting to connect to device: ${device.address} (name=${deviceName ?: "unknown"})")
             val result = bluetoothHidDevice?.connect(device)
             if (result == true) {
                 Log.d(TAG, "connect() returned true for ${device.address}, waiting for callback...")
@@ -930,8 +943,8 @@ class BluetoothHidService : Service() {
         originalBluetoothName?.let { original ->
             try {
                 bluetoothAdapter?.setName(original)
-            } catch (e: Exception) {
-                // ignore
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException restoring Bluetooth name: ${e.message}")
             }
         }
         instance = null
@@ -962,8 +975,8 @@ class BluetoothHidService : Service() {
 
         try {
             bluetoothHidDevice?.unregisterApp()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error unregistering HID app: ${e.message}")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException unregistering HID app: ${e.message}")
         }
 
         super.onDestroy()
