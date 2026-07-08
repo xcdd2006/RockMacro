@@ -4,17 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+      - 'V*'
   workflow_dispatch:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
       USE_ALIYUN_REPO: false
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
     steps:
       - name: Checkout code
@@ -41,5 +42,9 @@ jobs:
         with:
           files: |
             app/build/outputs/apk/release/app-release-unsigned.apk
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
