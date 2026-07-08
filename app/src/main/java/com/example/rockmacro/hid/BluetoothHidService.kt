@@ -410,17 +410,20 @@ class BluetoothHidService : Service() {
         )
 
         val pauseIntent = PendingIntent.getBroadcast(
-            this, 10, Intent(ACTION_MACRO_PAUSE).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+            this, 10,
+            Intent(ACTION_MACRO_PAUSE).setPackage(packageName).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
         val stopIntent = PendingIntent.getBroadcast(
-            this, 11, Intent(ACTION_MACRO_STOP).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+            this, 11,
+            Intent(ACTION_MACRO_STOP).setPackage(packageName).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
         val resumeIntent = PendingIntent.getBroadcast(
-            this, 12, Intent(ACTION_MACRO_RESUME).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+            this, 12,
+            Intent(ACTION_MACRO_RESUME).setPackage(packageName).addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
             PendingIntent.FLAG_UPDATE_CURRENT or
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
         )
